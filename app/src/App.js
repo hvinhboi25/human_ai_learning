@@ -1,5 +1,161 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls, Text } from '@react-three/drei';
 import './App.css';
+
+// Component VoiceVisualizer để hiển thị âm thanh
+function VoiceVisualizer({ audioContext, analyser, isRecording }) {
+  const canvasRef = useRef(null);
+  const animationRef = useRef(null);
+
+  useEffect(() => {
+    if (!analyser || !isRecording) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      if (!isRecording) return;
+      
+      analyser.getByteFrequencyData(dataArray);
+      
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      for (let i = 0; i < bufferLength; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height;
+        
+        const r = barHeight + 25 * (i / bufferLength);
+        const g = 250 * (i / bufferLength);
+        const b = 50;
+        
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+        
+        x += barWidth + 1;
+      }
+
+      animationRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [analyser, isRecording]);
+
+  return (
+    <div className="voice-visualizer">
+      <h4>Voice Activity Detection</h4>
+      <canvas 
+        ref={canvasRef} 
+        width={400} 
+        height={200}
+        className="visualizer-canvas"
+      />
+    </div>
+  );
+}
+
+// Component Avatar3D với mouth animation
+function Avatar3D({ rmsValue, isVoiceDetected }) {
+  const meshRef = useRef();
+  const mouthRef = useRef();
+  
+  useEffect(() => {
+    if (meshRef.current && mouthRef.current) {
+      // Animation dựa trên RMS value
+      const mouthScale = Math.max(0.1, Math.min(1.5, rmsValue / 20));
+      mouthRef.current.scale.y = mouthScale;
+      
+      // Màu sắc thay đổi khi có giọng nói
+      if (isVoiceDetected) {
+        meshRef.current.material.color.setHex(0x4caf50);
+        mouthRef.current.material.color.setHex(0xff6b6b);
+      } else {
+        meshRef.current.material.color.setHex(0x2196f3);
+        mouthRef.current.material.color.setHex(0x666666);
+      }
+    }
+  }, [rmsValue, isVoiceDetected]);
+
+  return (
+    <group>
+      {/* Head */}
+      <mesh ref={meshRef} position={[0, 0, 0]}>
+        <sphereGeometry args={[1, 32, 32]} />
+        <meshStandardMaterial color="#2196f3" />
+      </mesh>
+      
+      {/* Eyes */}
+      <mesh position={[-0.3, 0.2, 0.8]}>
+        <sphereGeometry args={[0.1, 16, 16]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      <mesh position={[0.3, 0.2, 0.8]}>
+        <sphereGeometry args={[0.1, 16, 16]} />
+        <meshStandardMaterial color="#000000" />
+      </mesh>
+      
+      {/* Mouth */}
+      <mesh ref={mouthRef} position={[0, -0.3, 0.8]}>
+        <sphereGeometry args={[0.2, 16, 16]} />
+        <meshStandardMaterial color="#666666" />
+      </mesh>
+      
+      {/* Body */}
+      <mesh position={[0, -1.5, 0]}>
+        <cylinderGeometry args={[0.5, 0.8, 1.5, 32]} />
+        <meshStandardMaterial color="#1976d2" />
+      </mesh>
+      
+      {/* Arms */}
+      <mesh position={[-0.8, -1, 0]} rotation={[0, 0, 0.3]}>
+        <cylinderGeometry args={[0.1, 0.1, 1, 16]} />
+        <meshStandardMaterial color="#1976d2" />
+      </mesh>
+      <mesh position={[0.8, -1, 0]} rotation={[0, 0, -0.3]}>
+        <cylinderGeometry args={[0.1, 0.1, 1, 16]} />
+        <meshStandardMaterial color="#1976d2" />
+      </mesh>
+    </group>
+  );
+}
+
+// Component 3D Scene
+function Scene3D({ rmsValue, isVoiceDetected }) {
+  return (
+    <div className="scene-3d">
+      <h4>🤖 3D Avatar với Voice Animation</h4>
+      <div className="avatar-container">
+        <Canvas camera={{ position: [0, 0, 5], fov: 50 }}>
+          <ambientLight intensity={0.5} />
+          <pointLight position={[10, 10, 10]} />
+          <Avatar3D rmsValue={rmsValue} isVoiceDetected={isVoiceDetected} />
+          <OrbitControls enableZoom={true} enablePan={true} />
+        </Canvas>
+      </div>
+      <div className="avatar-info">
+        <p>Avatar sẽ phản ứng với giọng nói của bạn!</p>
+        <div className="avatar-stats">
+          <span>RMS: {rmsValue.toFixed(2)}</span>
+          <span className={`voice-status ${isVoiceDetected ? 'active' : 'inactive'}`}>
+            {isVoiceDetected ? '🎤 Đang nói' : '🔇 Im lặng'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // Component AudioRecorder để thu âm
 function AudioRecorder() {
@@ -7,15 +163,48 @@ function AudioRecorder() {
   const [audioURL, setAudioURL] = useState('');
   const [recordings, setRecordings] = useState([]);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [audioContext, setAudioContext] = useState(null);
+  const [analyser, setAnalyser] = useState(null);
+  const [rmsValue, setRmsValue] = useState(0);
+  const [isVoiceDetected, setIsVoiceDetected] = useState(false);
   
   const mediaRecorderRef = useRef(null);
   const audioRef = useRef(null);
   const intervalRef = useRef(null);
+  const rmsIntervalRef = useRef(null);
 
-  // Bắt đầu thu âm
+  // Tính RMS để phát hiện giọng nói
+  const calculateRMS = (analyser) => {
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    analyser.getByteFrequencyData(dataArray);
+    
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i] * dataArray[i];
+    }
+    const rms = Math.sqrt(sum / bufferLength);
+    return rms;
+  };
+
+  // Bắt đầu thu âm với Web Audio API
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // Tạo AudioContext và AnalyserNode
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      const source = audioContext.createMediaStreamSource(stream);
+      
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+      source.connect(analyser);
+      
+      setAudioContext(audioContext);
+      setAnalyser(analyser);
+      
+      // Tạo MediaRecorder
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       
@@ -35,12 +224,14 @@ function AudioRecorder() {
           id: Date.now(),
           url: url,
           timestamp: new Date().toLocaleString(),
-          duration: recordingTime
+          duration: recordingTime,
+          rmsValue: rmsValue
         };
         setRecordings(prev => [...prev, newRecording]);
         
-        // Dừng stream
+        // Dừng stream và audio context
         stream.getTracks().forEach(track => track.stop());
+        audioContext.close();
       };
       
       mediaRecorder.start();
@@ -51,6 +242,13 @@ function AudioRecorder() {
       intervalRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
+      
+      // Bắt đầu tính RMS
+      rmsIntervalRef.current = setInterval(() => {
+        const rms = calculateRMS(analyser);
+        setRmsValue(rms);
+        setIsVoiceDetected(rms > 10); // Threshold để phát hiện giọng nói
+      }, 100);
       
     } catch (error) {
       console.error('Lỗi khi bắt đầu thu âm:', error);
@@ -64,6 +262,9 @@ function AudioRecorder() {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       clearInterval(intervalRef.current);
+      clearInterval(rmsIntervalRef.current);
+      setRmsValue(0);
+      setIsVoiceDetected(false);
     }
   };
 
@@ -113,6 +314,25 @@ function AudioRecorder() {
           )}
         </div>
         
+        {/* Voice Detection Status */}
+        {isRecording && (
+          <div className="voice-detection">
+            <div className={`voice-indicator ${isVoiceDetected ? 'voice-active' : 'voice-inactive'}`}>
+              <span className="voice-icon">{isVoiceDetected ? '🎤' : '🔇'}</span>
+              <span>{isVoiceDetected ? 'Phát hiện giọng nói' : 'Không có giọng nói'}</span>
+            </div>
+            <div className="rms-meter">
+              <span>RMS: {rmsValue.toFixed(2)}</span>
+              <div className="rms-bar">
+                <div 
+                  className="rms-fill" 
+                  style={{ width: `${Math.min((rmsValue / 50) * 100, 100)}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <div className="control-buttons">
           {!isRecording ? (
             <button onClick={startRecording} className="record-btn">
@@ -125,6 +345,18 @@ function AudioRecorder() {
           )}
         </div>
       </div>
+
+      {/* Voice Visualizer */}
+      {isRecording && analyser && (
+        <VoiceVisualizer 
+          audioContext={audioContext} 
+          analyser={analyser} 
+          isRecording={isRecording} 
+        />
+      )}
+
+      {/* 3D Avatar */}
+      <Scene3D rmsValue={rmsValue} isVoiceDetected={isVoiceDetected} />
 
       {/* Audio Player */}
       {audioURL && (
