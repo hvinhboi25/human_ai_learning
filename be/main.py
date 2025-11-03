@@ -1,82 +1,162 @@
 """
-Main FastAPI application
+Day 11: Backend Foundation
+FastAPI + Groq chat endpoint
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
+from pydantic import BaseModel
+from groq import Groq
+import os
+from dotenv import load_dotenv
+from datetime import datetime
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-from app.config import settings
-from app.database import init_db
-from app.routes import audio, chat, history
+# Load environment variables
+load_dotenv()
 
-
-# Create FastAPI app
+# FastAPI app
 app = FastAPI(
-    title="Human-AI Learning Platform API",
-    description="Backend API for AI-powered language learning with voice interaction",
-    version="1.0.0"
+    title="AI Learning Platform - Day 11",
+    description="Basic chat with Groq AI",
+    version="0.1.0"
 )
 
-# Configure CORS
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify exact origins
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount static files for audio
-audio_dir = Path(settings.audio_storage_path)
-audio_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/audio", StaticFiles(directory=str(audio_dir)), name="audio")
+# Groq client
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Include routers
-app.include_router(audio.router)
-app.include_router(chat.router)
-app.include_router(history.router)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database on startup"""
-    init_db()
-    print("✓ Database initialized")
-    print(f"✓ Audio storage: {settings.audio_storage_path}")
-    print(f"✓ ChromaDB path: {settings.chroma_db_path}")
+# Database connection
+def get_db():
+    """Get database connection"""
+    return psycopg2.connect(
+        os.getenv("DATABASE_URL"),
+        cursor_factory=RealDictCursor
+    )
 
 
+# Pydantic models
+class ChatMessage(BaseModel):
+    text: str
+
+
+class ChatResponse(BaseModel):
+    user_message: str
+    ai_response: str
+    conversation_id: int
+    timestamp: str
+
+
+# Routes
 @app.get("/")
-async def root():
+def root():
     """Root endpoint"""
     return {
-        "message": "Human-AI Learning Platform API",
-        "version": "1.0.0",
-        "status": "running"
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "services": {
-            "api": "running",
-            "database": "connected",
-            "tts": "ready",
-            "langchain": "ready"
+        "message": "AI Learning Platform - Day 11",
+        "status": "running",
+        "endpoints": {
+            "chat": "POST /chat",
+            "health": "GET /health"
         }
     }
 
 
+@app.get("/health")
+def health():
+    """Health check"""
+    try:
+        conn = get_db()
+        conn.close()
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
+
+
+@app.post("/chat", response_model=ChatResponse)
+def chat(message: ChatMessage):
+    """
+    Chat endpoint
+    Receives user message, calls Groq AI, saves to database, returns response
+    """
+    user_text = message.text.strip()
+    
+    if not user_text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    
+    try:
+        # Call Groq API
+        response = groq_client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful AI assistant for language learning. Be friendly, clear, and educational."
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
+            ],
+            temperature=0.7,
+            max_tokens=1024
+        )
+        
+        ai_text = response.choices[0].message.content
+        
+        # Save to database
+        conn = get_db()
+        cur = conn.cursor()
+        
+        cur.execute(
+            """
+            INSERT INTO conversations (user_message, ai_response, created_at)
+            VALUES (%s, %s, %s)
+            RETURNING id, created_at
+            """,
+            (user_text, ai_text, datetime.now())
+        )
+        
+        result = cur.fetchone()
+        conversation_id = result['id']
+        timestamp = result['created_at'].isoformat()
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return ChatResponse(
+            user_message=user_text,
+            ai_response=ai_text,
+            conversation_id=conversation_id,
+            timestamp=timestamp
+        )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
+    
+    print("=" * 50)
+    print("🚀 Day 11: Backend Starting...")
+    print("=" * 50)
+    print(f"📍 Server: http://localhost:{os.getenv('PORT', 8000)}")
+    print(f"📖 Docs: http://localhost:{os.getenv('PORT', 8000)}/docs")
+    print("=" * 50)
+    
     uvicorn.run(
-        "main:app",
-        host=settings.host,
-        port=settings.port,
+        app,
+        host=os.getenv("HOST", "0.0.0.0"),
+        port=int(os.getenv("PORT", 8000)),
         reload=True
     )
 
