@@ -94,7 +94,7 @@ def chat(message: ChatMessage):
     try:
         # Call Groq API
         response = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
@@ -147,14 +147,14 @@ if __name__ == "__main__":
     import uvicorn
     
     print("=" * 50)
-    print("🚀 Day 11: Backend Starting...")
+    print("Day 11: Backend Starting...")
     print("=" * 50)
-    print(f"📍 Server: http://localhost:{os.getenv('PORT', 8000)}")
-    print(f"📖 Docs: http://localhost:{os.getenv('PORT', 8000)}/docs")
+    print(f"Server: http://localhost:{os.getenv('PORT', 8000)}")
+    print(f"Docs: http://localhost:{os.getenv('PORT', 8000)}/docs")
     print("=" * 50)
     
     uvicorn.run(
-        app,
+        "main:app",
         host=os.getenv("HOST", "0.0.0.0"),
         port=int(os.getenv("PORT", 8000)),
         reload=True

@@ -1,0 +1,73 @@
+# Environment variables - DO NOT COMMIT API KEYS!
+be/.env
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+be/__pycache__/
+be/venv/
+be/.venv/
+
+# Node
+node_modules/
+fe/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnpm-debug.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+db/chroma_db/
+
+# Audio files (generated)
+be/audio_files/
+*.mp3
+*.wav
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Build
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+
+# Temporary files
+*.tmp
+temp/
+.cache/
+
